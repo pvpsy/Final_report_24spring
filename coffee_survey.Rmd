@@ -1,0 +1,346 @@
+---
+title: "The Great American Coffee Taste Test"
+author: "Vivien Pálosi"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+library(tidyverse)
+library(conflicted)
+library(tidytuesdayR)
+library(rmarkdown)
+library(ggplot2)
+library(readr)
+library(scales)
+library(stringr)
+library(car)
+library(report)
+library(caret)
+library(lmtest)
+library(sandwich)
+library(kableExtra)
+library(knitr)
+
+theme_set(theme_light())
+```
+
+```{r}
+# Reading tidytuesday data 
+coffee_survey <- tt_load("2024-05-14")
+coffee_data <- coffee_survey$coffee_survey
+head(coffee_data)
+```
+
+```{r}
+# Exploring the dataset
+summary(coffee_data)
+```
+
+### In October 2023, "world champion barista" James Hoffmann and coffee company Cometeer held the "Great American Coffee Taste Test" on YouTube, during which viewers were asked to fill out a survey about 4 coffees they ordered from Cometeer for the tasting. Let's look at some charts that discribes the coffee consumptions.
+
+```{r}
+# Setting the color palettes
+brown_palette5 <- c("#553d2a", "#7e634e", "#907761", "#ab9680", "#c7b69f")
+brown_palette7 <- c("#553d2a", "#69503c", "#7e634e", "#907761", "#ab9680", "#c7b69f", "#e3d7bf")
+brown_palette10 <- c("#553d2a", "#5f4633", "#69503c", "#735945", "#7e634e", "#907761", "#ab9680", "#c7b69f", "#e3d7bf", "#fff9e1")
+brown_palette12 <- c("#553d2a", "#5f4633", "#69503c", "#735945", "#7e634e", "#907761", "#ab9680", "#c7b69f","#d7cfc6", "#e3d7bf", "#fff9e1", "#efefec")
+```
+
+```{r}
+# Grouping and reordering the data to display the age distribution
+coffee_data_filt_age <- coffee_data %>% 
+  dplyr::filter(!is.na(age)) %>%
+  group_by(age) %>%
+  summarise(count = n())
+
+new_order <- c("<18 years old", "18-24 years old", "25-34 years old", "35-44 years old", "45-54 years old", "55-64 years old", ">65 years old")
+coffee_data_filt_age$age <- factor(coffee_data_filt_age$age, levels = new_order)
+print(head(coffee_data_filt_age))
+```
+
+```{r}
+# Plot to display the age distribution
+Ageplot <- ggplot(coffee_data_filt_age, aes(x = age, y = count, fill = age)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Age Distribution of Coffee Testers", x = "Age Group", y = "Number of Testers") +
+  scale_fill_manual(values = brown_palette7) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(Ageplot)
+```
+
+```{r}
+# Grouping and reordering the data to display the brewing methods
+coffee_data_cleaned_brew <- coffee_data %>%
+  separate_rows(brew, sep = ", ") %>%
+  mutate(brew = gsub(" \\(.*\\)$", "", brew)) %>%
+  dplyr::filter(!is.na(brew)) %>%
+  group_by(brew) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) 
+coffee_data_cleaned_brew$brew <- factor(coffee_data_cleaned_brew$brew, levels = coffee_data_cleaned_brew$brew)
+print(head(coffee_data_cleaned_brew))
+```
+
+```{r}
+# Plot to display the brewing methods
+Brewplot <- ggplot(coffee_data_cleaned_brew , aes(x = reorder(brew, -count), y = count, fill = brew)) +
+  geom_bar(stat = "identity") +
+  labs(title = "How do people like to brew their coffee?", x = "Brewing Method", y = "Testers") +
+  scale_fill_manual(values = brown_palette10) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(Brewplot)
+```
+
+```{r}
+# Grouping and reordering the data to display the coffee likes
+coffee_data_favorite <- coffee_data %>%
+  mutate(favorite = if_else(favorite == "Other", favorite_specify, favorite)) %>%
+  dplyr::filter(!is.na(favorite)) %>%
+  group_by(favorite) %>%
+  summarise(count = n()) %>%
+  mutate(count = as.numeric(count))
+
+coffee_data_favorite <- coffee_data_favorite %>%  
+  mutate(favorite = if_else(count < 10, "Others", favorite)) %>%
+  group_by(favorite) %>%
+  summarise(count = sum(count)) %>%
+  arrange(desc(count))
+
+coffee_data_favorite$favorite <- factor(coffee_data_favorite$favorite, levels = coffee_data_favorite$favorite)
+print(head(coffee_data_favorite))
+```
+
+```{r}
+# Plot to display the favorite coffees
+Favoriteplot <- ggplot(coffee_data_favorite, aes(x = reorder(favorite, -count), y = count, fill = favorite)) +
+  geom_bar(stat = "identity") +
+  labs(title = "How do people like to drink their coffee?", x = "Favorite Coffee", y = "Testers") +
+  scale_fill_manual(values = brown_palette12) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(Favoriteplot)
+```
+
+```{r}
+# Grouping and reordering the data to display where people like to drink coffee
+coffee_data_place <- coffee_data %>%
+  separate_rows(where_drink, sep = ", ") %>%
+  dplyr::filter(!is.na(where_drink)) %>%
+  group_by(where_drink) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) 
+coffee_data_place$where_drink <- factor(coffee_data_place$where_drink, levels = coffee_data_place$where_drink)
+print(head(coffee_data_place))
+```
+
+
+```{r}
+# Plot to display where people like to drink coffee
+Whereplot <- ggplot(coffee_data_place, aes(x = reorder(where_drink, -count), y = count, fill = where_drink)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Where do people like to drink their coffee?", x = "Favorite places", y = "Testers") +
+  scale_fill_manual(values = brown_palette5) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(Whereplot)
+```
+
+
+
+## Now let's explore if there are any gender differences in how much they are willing to spend on a coffee?
+
+```{r}
+# Cleaning and grouping the data to examine if there any difference in how much they are willing to spend on a coffee.
+coffee_data_spending <- coffee_data %>%
+  dplyr::filter(!is.na(gender) & !is.na(most_paid) & !is.na(most_willing) & !is.na(spent_equipment)) %>%
+  mutate(most_paid = gsub("[^0-9.]", "", most_paid), most_paid = as.numeric(most_paid)) %>%
+  mutate(most_willing = gsub("[^0-9.]", "", most_willing), most_willing = as.numeric(most_willing)) %>%
+  mutate(spent_equipment = gsub("[^0-9.]", "", spent_equipment), spent_equipment = as.numeric(spent_equipment))
+
+gender_spending <- coffee_data_spending %>%
+  group_by(gender) %>%
+  summarise(average_most_paid = mean(most_paid, na.rm = TRUE), average_most_willing = mean(most_willing, na.rm = TRUE), average_spent_equipment = mean(spent_equipment, na.rm = TRUE))
+
+print(gender_spending)
+
+# Perform ANOVA's to compare means between genders
+anova_most_paid <- aov(most_paid ~ gender, data = coffee_data_spending)
+anova_most_willing <- aov(most_willing ~ gender, data = coffee_data_spending)
+anova_spent_equipment <- aov(spent_equipment ~ gender, data = coffee_data_spending)
+summary(anova_most_paid)
+summary(anova_most_willing)
+summary(anova_spent_equipment)
+
+# If ANOVA is significant, perform post-hoc tests
+tukey_most_paid <- TukeyHSD(anova_most_paid)
+tukey_spent_equipment <- TukeyHSD(anova_spent_equipment)
+print(tukey_most_paid)
+print(tukey_spent_equipment)
+```
+
+```{r}
+# Descriptive statistics of genders and money spent on coffee
+summary(gender_spending)
+
+descriptive_stats <- coffee_data_spending %>%
+  group_by(gender) %>%
+  summarise(
+    count = n(),
+    mean_most_paid = mean(most_paid, na.rm = TRUE),
+    sd_most_paid = sd(most_paid, na.rm = TRUE),
+    mean_most_willing = mean(most_willing, na.rm = TRUE),
+    sd_most_willing = sd(most_willing, na.rm = TRUE),
+    mean_spent_equipment = mean(spent_equipment, na.rm = TRUE),
+    sd_spent_equipment = sd(spent_equipment, na.rm = TRUE)
+  )
+print(descriptive_stats)
+```
+ 
+```{r}
+# Reporting ANOVA results
+report(anova_most_paid)
+report(anova_spent_equipment)
+```
+
+### Results
+An Analysis of Variance (ANOVA) was conducted to compare the means of spending across different gender groups:
+ - There is a significant difference in what is the most they've ever paid for a cup of coffee, with non-binary individuals spent significantly more than females. F(4, 3445) = 2.45, p = 0.044. Post-hoc comparisons using the Tukey HSD test indicated that the mean spending for non-binary (M = 627, SD = 479) was significantly higher than for females (M = 484, SD = 444), with a mean difference of 142.346 (95% CI, 7.203 to 277.489), p = 0.033.
+ - There are no significant gender difference in how much they are willing to spend on a coffee. 
+ - There is a significant difference in how much they've spent on equipments, with man spent significantly more than females. F(4, 3445) = 10.45, p < .001 . Post-hoc comparisons using the Tukey HSD test indicated that the mean spending for males (M = 519, SD = 480) was significantly higher than for females (M = 484, SD = 444), with a mean difference of 488,718.96 (95% CI, 281423.5 to 696014.4), p < 0.0001.
+ 
+```{r}
+#Presenting the results in a table
+anova_summary_most_paid <- summary(anova_most_paid)
+anova_summary_spent_equipment <- summary(anova_spent_equipment)
+
+# Creating a data frame for the ANOVA table
+anova_results <- data.frame(
+  Variable = c("most_paid", "spent_equipment"),
+  Df = c(anova_summary_most_paid[[1]]$Df[1], anova_summary_spent_equipment[[1]]$Df[1]),
+  `Sum Sq` = c(anova_summary_most_paid[[1]]$`Sum Sq`[1], anova_summary_spent_equipment[[1]]$`Sum Sq`[1]),
+  `Mean Sq` = c(anova_summary_most_paid[[1]]$`Mean Sq`[1], anova_summary_spent_equipment[[1]]$`Mean Sq`[1]),
+  `F value` = c(anova_summary_most_paid[[1]]$`F value`[1], anova_summary_spent_equipment[[1]]$`F value`[1]),
+  `Pr(>F)` = c(anova_summary_most_paid[[1]]$`Pr(>F)`[1], anova_summary_spent_equipment[[1]]$`Pr(>F)`[1])
+)
+
+# Format and display the table
+anova_results %>%
+  kable(format = "html", digits = 4, col.names = c("Variable", "Df", "Sum Sq", "Mean Sq", "F value", "Pr(>F)"), align = 'c') %>%
+  kable_styling(full_width = F, bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, bold = TRUE) %>%
+  add_header_above(c("ANOVA Main Effect Results" = 6))
+
+```
+
+### Discussion
+The analysis indicates that non-binary people spent the most for a cup of coffee in their life, and man are spending more on coffee equipment then women.
+ 
+ 
+## Can we predict how much coffee a person is going to drink a day based on how strongly needs coffee? 
+We will examine if the number of children (which presumably causes fatigue) and how strongly they need caffeine (the level of caffeine and strengths of the coffee).
+
+```{r}
+# Cleaning the data
+# Selecting the columns
+selected_data <- c("number_children", "caffeine", "strength", "cups")
+coffee_data_select <- coffee_data %>% 
+  select(all_of(selected_data))
+
+# Remove missing values
+coffee_data_clean <- coffee_data_select %>% drop_na()
+```
+
+```{r}
+# Recoding variables
+coffee_data_clean$cups[coffee_data_clean$cups == "More than 4"] <- "5"
+coffee_data_clean$cups[coffee_data_clean$cups == "Less than 1"] <- "0"
+coffee_data_clean$number_children[coffee_data_clean$number_children == "More than 3"] <- "4"
+coffee_data_clean$number_children[coffee_data_clean$number_children == "None"] <- "0"
+coffee_data_clean$caffeine[coffee_data_clean$caffeine == "Decaf"] <- "0"
+coffee_data_clean$caffeine[coffee_data_clean$caffeine == "Half caff"] <- "1"
+coffee_data_clean$caffeine[coffee_data_clean$caffeine == "Full caffeine"] <- "2"
+coffee_data_clean$strength[coffee_data_clean$strength == "Weak"] <- "1"
+coffee_data_clean$strength[coffee_data_clean$strength == "Somewhat light"] <- "2"
+coffee_data_clean$strength[coffee_data_clean$strength == "Medium"] <- "3"
+coffee_data_clean$strength[coffee_data_clean$strength == "Somewhat strong"] <- "4"
+coffee_data_clean$strength[coffee_data_clean$strength == "Very strong"] <- "5"
+
+# Set variables numeric
+coffee_data_clean$cups <- as.numeric(coffee_data_clean$cups)
+coffee_data_clean$number_children <- as.numeric(coffee_data_clean$number_children)
+coffee_data_clean$caffeine <- as.numeric(coffee_data_clean$caffeine)
+coffee_data_clean$strength <- as.numeric(coffee_data_clean$strength)
+```
+
+```{r}
+complex_model <- lm(cups ~ ., data = coffee_data_clean)
+summary(complex_model)
+```
+
+```{r}
+# Check normality assumption
+qqnorm(residuals(complex_model))
+qqline(residuals(complex_model))
+
+# Shapiro-Wilk test
+shapiro.test(residuals(complex_model))
+
+# Rainbow test
+raintest(complex_model)
+
+# Breusch-Pagan test
+bptest(complex_model)
+
+# Check the multicollinearity assumption
+vif(complex_model)
+```
+
+```{r}
+# Calculate robust standard errors
+robust_se <- vcovHC(complex_model, type = "HC1")
+
+# Display coefficients with robust standard errors
+coeftest(complex_model, vcov = robust_se)
+```
+
+### Results
+
+We performed a linear regression analysis to examine the relationship between the selected variables. To account for that the residuals are not normally distributed and the heteroscedasticity we used robust standard errors.
+ - The intercept is not significant.
+ - The number of children are significant predictor of daily coffee consumption, 0.1734 (p < 0.000).
+ - The quantity of caffeine in a cup of coffee are significant predictor of daily coffee consumption, 0.4668 (p < 0.000).
+ - The strength of the coffee are significant predictor of daily coffee consumption, 0.1923 (p < 0.000).
+ 
+```{r}
+# Presenting the results in a table
+# Extract coefficients, robust standard errors, t-values, and p-values
+coefficients <- coef(summary(complex_model))
+robust_se_vals <- sqrt(diag(robust_se))
+t_values <- coefficients[, "Estimate"] / robust_se_vals
+p_values <- 2 * pt(-abs(t_values), df = df.residual(complex_model))
+
+# Create a data frame for the table
+regression_results <- data.frame(
+  Estimate = coefficients[, "Estimate"],
+  `Robust Std. Error` = robust_se_vals,
+  `t value` = t_values,
+  `Pr(>|t|)` = p_values
+)
+
+# Format and display the table
+regression_results %>%
+  kable(format = "html", digits = 4, col.names = c("Predictor", "Estimate", "Robust Std. Error", "t value", "Pr(>|t|)")) %>%
+  kable_styling(full_width = F, bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(1, bold = TRUE) %>%
+  add_header_above(c("Regression Coefficients" = 5))
+```
+
+### Discussion
+ 
+The analysis indicates that all of the tested factors contributes positively for the daily coffee consumption. The more children someone has and the stronger they like coffee, the more they will consume in a day. 
